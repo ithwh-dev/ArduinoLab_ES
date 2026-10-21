@@ -17,7 +17,8 @@ Estos ficheros son **bundles de producción, no código fuente original editable
 ## Módulos de nuestro MVP
 - `src/data/lessons.ts`: metadatos de 11 unidades en español.
 - `src/lib/electronics.ts`: estimación de corriente, brillo ilustrativo y generador de ejemplo C++.
-- `src/components/ArduinoScene.tsx`: escena propia con geometrías primitivas y cámara manipulable.
+- `src/components/UnoBoard.tsx`: modelo procedural propio con conectores, zócalos, pines, microcontrolador y componentes de superficie; textura de serigrafía dibujada en canvas.
+- `src/components/ArduinoScene.tsx`: escena, cables tubulares, proyección de rótulos e inspección por cursor/foco/toque, separada de la selección y el progreso.
 - `src/data/boardParts.ts`: contenido de las cinco partes y retos de las lecciones.
 - `src/lib/blinkSimulation.ts`: servicio con un solo temporizador, estados HIGH/LOW, stop, reset y cambios de tiempos.
 - `src/hooks/useBlinkSimulation.ts`: adapta el servicio a React y libera el temporizador al desmontar.

@@ -1,5 +1,6 @@
 import { chromium } from 'playwright-core';
 import { mkdir } from 'node:fs/promises';
+import { PerspectiveCamera, Vector3 } from 'three';
 (async () => {
  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
  try {
@@ -10,6 +11,15 @@ import { mkdir } from 'node:fs/promises';
  const choose = async name => { await page.getByRole('button',{name,exact:true}).click(); };
  await page.goto(process.env.BASE_URL || 'http://127.0.0.1:5173/'); await page.locator('canvas').waitFor();
  await page.waitForFunction(()=>document.querySelector('canvas')?.width>0);
+ await page.getByRole('button', { name: 'Información de resistencia', exact: true }).focus();
+ await page.getByRole('tooltip').waitFor();
+ assert((await page.getByRole('tooltip').innerText()).includes('220'), 'resistance information');
+ await page.keyboard.press('Escape');
+ await page.getByRole('button', { name: 'Información de LED', exact: true }).hover();
+ await page.getByRole('tooltip').waitFor();
+ assert((await page.getByRole('tooltip').innerText()).includes('cátodo'), 'LED polarity information');
+ await page.mouse.move(0, 0);
+
  await page.getByRole('tab',{name:'Reto',exact:true}).click();
  await choose('B. Para limitar la corriente y proteger el LED');
  assert(await page.getByRole('button',{name:'Completar lección',exact:true}).isDisabled(),'LED activity gate');
@@ -33,6 +43,29 @@ import { mkdir } from 'node:fs/promises';
  await choose('Ejecutar simulación');await choose('1. Conoce Arduino');
  assert(await page.getByRole('button',{name:'Detener simulación',exact:true}).count()===0,'board hides LED controls');
  assert(await page.getByRole('combobox').count()===0,'board hides resistance');
+ const chipLabel = page.getByRole('button', { name: 'Explorar Microcontrolador', exact: true });
+ await chipLabel.hover();
+ await page.getByRole('tooltip').waitFor();
+ assert((await page.getByRole('tooltip').innerText()).includes('ATmega328P'), 'Spanish hover information');
+ assert((await page.locator('.information-inner').innerText()).includes('Partes exploradas: 0/5'), 'hover does not count activity');
+ await page.keyboard.press('Escape');
+ assert(await page.getByRole('tooltip').count() === 0, 'Escape dismisses tooltip');
+ await chipLabel.focus(); await page.getByRole('tooltip').waitFor();
+ await page.keyboard.press('Escape'); await chipLabel.evaluate(element => element.blur());
+ // Proyecta el centro físico del chip para probar el raycasting sobre su geometría.
+ await page.locator('canvas').scrollIntoViewIfNeeded();
+ const canvasBounds = await page.locator('canvas').boundingBox();
+ const scale = Math.max(1, canvasBounds.height / canvasBounds.width * 0.92) * 0.68;
+ const camera = new PerspectiveCamera(39, canvasBounds.width / canvasBounds.height, 0.1, 1000);
+ camera.position.set(-1.15 + 6.4 * scale, 0.3 + 7.8 * scale, 8.7 * scale);
+ camera.lookAt(-1.15, 0.3, 0); camera.updateMatrixWorld();
+ const chipPoint = new Vector3(-1, 0.54, 0.26).project(camera);
+ await page.mouse.move(canvasBounds.x + (chipPoint.x + 1) * canvasBounds.width / 2, canvasBounds.y + (1 - chipPoint.y) * canvasBounds.height / 2);
+ await page.getByRole('tooltip').waitFor();
+ assert((await page.getByRole('tooltip').innerText()).includes('ATmega328P'), 'mesh hover information');
+ await page.screenshot({path:'artifacts/browser/placa-hover.png',fullPage:true});
+ await page.mouse.move(0,0);
+
  await page.getByRole('tab',{name:'Reto',exact:true}).click(); await choose('B. El microcontrolador ATmega328P');
  assert(await page.getByRole('button',{name:'Completar lección',exact:true}).isDisabled(),'board exploration gate');
  const parts=['Puerto USB','Microcontrolador','Entradas analógicas','Pines digitales','Alimentación'];

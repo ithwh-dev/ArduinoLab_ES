@@ -26,3 +26,9 @@ Las capturas reproducibles se generan en `artifacts/browser/placa-escritorio.png
 - La continuidad del circuito se representa mediante terminales separados y cables D13 → resistencia → ánodo, con retorno desde el cátodo a GND. La protoboard y la placa están simplificadas; el modelo no permite deducir las filas conductoras ni sustituye instrucciones de montaje físico verificadas.
 - Los temporizadores del navegador pueden retrasarse en segundo plano. Los estados visuales, el brillo y la corriente son didácticos, sin compilación C++, emulación AVR ni hardware.
 - Las lecciones 3–11 continúan como próximas. El progreso es local al navegador, sin cuentas ni respaldo remoto.
+
+## Mejora visual e inspección — 21 de octubre de 2026
+
+Se sustituyó la placa esquemática por un modelo procedural propio: carcasa USB, zócalos con cavidades, microcontrolador con terminales, condensadores, cristal, componentes de superficie y serigrafía original. Se añadieron cables tubulares y más detalle en la protoboard. No se reutilizaron modelos, texturas ni bundles de la referencia.
+
+El recorrido de navegador incluye información de LED/resistencia, hover y foco sobre el rótulo del microcontrolador, hover mediante raycasting sobre su geometría real, cierre con Escape y verificación de que el hover no registra actividad. Se conserva la selección explícita para el reto. Se inspeccionaron las capturas de la placa en escritorio y móvil. La representación continúa simplificada; no se afirma equivalencia visual ni exactitud mecánica con la referencia.
