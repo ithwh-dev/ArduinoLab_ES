@@ -18,15 +18,22 @@ Estos ficheros son **bundles de producción, no código fuente original editable
 - `src/data/lessons.ts`: metadatos de 11 unidades en español.
 - `src/lib/electronics.ts`: estimación de corriente, brillo ilustrativo y generador de ejemplo C++.
 - `src/components/ArduinoScene.tsx`: escena propia con geometrías primitivas y cámara manipulable.
-- `src/App.tsx`: estado de simulación guiada, paneles, progreso, cuestionario y monitor didáctico.
+- `src/data/boardParts.ts`: contenido de las cinco partes y retos de las lecciones.
+- `src/lib/blinkSimulation.ts`: servicio con un solo temporizador, estados HIGH/LOW, stop, reset y cambios de tiempos.
+- `src/hooks/useBlinkSimulation.ts`: adapta el servicio a React y libera el temporizador al desmontar.
+- `src/lib/progress.ts`: requisitos de actividad por lección y normalización del progreso almacenado.
+- `src/App.tsx`: presentación, navegación, configuración persistente, retos y monitor didáctico.
+- `scripts/browser-smoke.mjs`: recorrido funcional de ambas lecciones con Chromium real.
 - `src/styles.css`: diseño responsive.
 
 ## Comportamiento y límites
 - El botón Ejecutar inicia una animación temporizada de estado HIGH/LOW.
 - La corriente estimada con V=5, Vf≈2: I=(5−2)/R; el brillo es meramente visual.
-- Las conexiones 3D iniciales son conceptuales; hay que validarlas antes de enseñar polaridad y cableado exacto.
+- El esquema 3D conecta los terminales visibles de D13, resistencia, ánodo y cátodo/GND. Los terminales del LED están separados y los colores de la resistencia cambian con su valor (tres bandas de valor nominal, sin representación de tolerancia).
+- La protoboard es esquemática: los orificios y la geometría no describen sus conexiones internas ni las dimensiones de un montaje real. Verificar siempre el diagrama y la hoja de datos antes de usar hardware.
+- La escena se carga con importación diferida, DPR máximo de 1.65 y renderizado bajo demanda. Los rótulos y botones son DOM de React, proyectados desde coordenadas 3D; no crean raíces React adicionales. La cámara adapta su distancia al tamaño del contenedor.
 - No hay compilación, conexión a dispositivo, simulación general de electrónica ni emulación AVR.
-- `localStorage` guarda el progreso. No identifica estudiantes ni habilita seguimiento docente remoto.
+- `localStorage` guarda las lecciones completadas y los tiempos/resistencia validados. Datos desconocidos o inválidos se descartan; los errores de escritura muestran un aviso sin bloquear la actividad. No identifica estudiantes ni habilita seguimiento docente remoto.
 
 ## Hoja de ruta
 1. MVP corregido, lecciones 1 y 2 funcionales; tests, UX y móviles.

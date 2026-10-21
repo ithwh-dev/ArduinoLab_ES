@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { Activity, ArrowRight, BookOpen, CheckCircle2, ChevronRight, CircleHelp, CircuitBoard, Code2, GraduationCap, Info, Lightbulb, Menu, Pause, Play, RotateCcw, Settings2, SlidersHorizontal, Volume2, Zap } from 'lucide-react';
-import { ArduinoScene } from './components/ArduinoScene';
+const ArduinoScene = lazy(() => import('./components/ArduinoScene').then(module => ({ default: module.ArduinoScene })));
+import { useBlinkSimulation } from './hooks/useBlinkSimulation';
+import { boardParts, boardChallenge, blinkChallenge, type BoardPartId } from './data/boardParts';
+import { validProgress, canCompleteLesson } from './lib/progress';
 import { lessons } from './data/lessons';
 import { generateBlinkCode, ledBrightness, ledCurrentMa } from './lib/electronics';
 
@@ -8,19 +11,28 @@ type ConsoleEntry = { text: string; id: number };
 const STORAGE_KEY = 'arduino-lab-es-progress-v1';
 
 function loadProgress(): string[] {
-  try { const raw = localStorage.getItem(STORAGE_KEY); const data: unknown = raw ? JSON.parse(raw) : []; return Array.isArray(data) ? data.filter((item): item is string => typeof item === 'string') : []; } catch { return []; }
+  try { const raw = localStorage.getItem(STORAGE_KEY); const data: unknown = raw ? JSON.parse(raw) : []; return validProgress(data); } catch { return []; }
+}
+
+function loadSettings(): { onMs: number; offMs: number; resistance: number } {
+  try {
+    const data = JSON.parse(localStorage.getItem('arduino-lab-es-settings-v1') ?? '{}');
+    const duration = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 2000 && value % 100 === 0 ? value : 500;
+    return { onMs: duration(data?.onMs), offMs: duration(data?.offMs), resistance: [220, 1000, 10000].includes(data?.resistance) ? data.resistance : 220 };
+  } catch { return { onMs: 500, offMs: 500, resistance: 220 }; }
 }
 
 export default function App() {
+  const [settings] = useState(loadSettings);
   const [activeId, setActiveId] = useState('blink');
-  const [onMs, setOnMs] = useState(500);
-  const [offMs, setOffMs] = useState(500);
-  const [resistance, setResistance] = useState(220);
-  const [running, setRunning] = useState(false);
-  const [ledOn, setLedOn] = useState(false);
+  const [onMs, setOnMs] = useState(settings.onMs);
+  const [offMs, setOffMs] = useState(settings.offMs);
+  const [resistance, setResistance] = useState(settings.resistance);
   const [showWires, setShowWires] = useState(true);
   const [logs, setLogs] = useState<ConsoleEntry[]>([]);
-  const [hasRun, setHasRun] = useState(false);
+  const [selectedPart, setSelectedPart] = useState<BoardPartId | null>(null);
+  const [explored, setExplored] = useState<BoardPartId[]>([]);
+  const [storageError, setStorageError] = useState(false);
   const [quizAnswer, setQuizAnswer] = useState<number | null>(null);
   const [completed, setCompleted] = useState<string[]>(loadProgress);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
@@ -32,29 +44,29 @@ export default function App() {
   const current = ledCurrentMa(5, 2, resistance);
   const brightness = ledBrightness(resistance);
   const correct = quizAnswer === 1;
+  const challenge = boardMode ? boardChallenge : blinkChallenge;
   const addLog = useCallback((message: string) => {
     setLogs((old) => [...old.slice(-7), { text: message, id: ++logId.current }]);
   }, []);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(completed)); }, [completed]);
+  const simulation = useBlinkSimulation(onMs, offMs, addLog);
+  const { running, ledOn, hasRun, stop } = simulation;
   useEffect(() => {
-    if (!running || boardMode) return;
-    let timeout: ReturnType<typeof setTimeout>;
-    let cancelled = false;
-    const tick = (next: boolean) => {
-      if (cancelled) return;
-      setLedOn(next);
-      addLog(next ? `PIN 13 → ALTO (LED encendido)` : `PIN 13 → BAJO (LED apagado)`);
-      timeout = setTimeout(() => tick(!next), next ? onMs : offMs);
-    };
-    tick(true);
-    return () => { cancelled = true; clearTimeout(timeout); };
-  }, [running, onMs, offMs, boardMode, addLog]);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(completed));
+      localStorage.setItem('arduino-lab-es-settings-v1', JSON.stringify({ onMs, offMs, resistance }));
+      setStorageError(false);
+    } catch { setStorageError(true); }
+  }, [completed, onMs, offMs, resistance]);
 
-  function stop() { setRunning(false); setLedOn(false); }
   function run() {
     if (running) { stop(); return; }
-    setLogs([]); setHasRun(true); setRunning(true); setTab('learn');
+    setLogs([]); simulation.start(); setTab('learn');
+  }
+  function selectPart(id: BoardPartId) {
+    setSelectedPart(id);
+    setExplored(old => old.includes(id) ? old : [...old, id]);
+    setTab(old => old === 'challenge' ? 'learn' : old);
   }
   function changeLesson(id: string) {
     const target = lessons.find((l) => l.id === id);
@@ -62,77 +74,99 @@ export default function App() {
     stop(); setActiveId(id); setShowMobileMenu(false); setTab('learn'); setLogs([]); setQuizAnswer(null);
   }
   function finish() {
-    if (correct && hasRun && !completed.includes('blink')) setCompleted((c) => [...c, 'blink']);
+    if (canCompleteLesson(activeId, quizAnswer, hasRun, explored)) setCompleted(c => c.includes(activeId) ? c : [...c, activeId]);
   }
   const progress = completed.length;
+  const part = boardParts.find(item => item.id === selectedPart);
+  const boardPanel = <>
+    <p className="objective"><b>Objetivo:</b> identifica las cinco partes y explica cuál ejecuta un programa.</p>
+    <p className="support-note">Selecciona un punto de la placa o usa estos botones con el teclado.</p>
+    <div className="part-buttons" aria-label="Partes de Arduino UNO">{boardParts.map(item =>
+      <button key={item.id} aria-pressed={selectedPart === item.id} onClick={() => selectPart(item.id)}>
+        {explored.includes(item.id) ? '✓ ' : ''}{item.name}
+      </button>)}</div>
+    <div className="part-description" role="status"><h4>{part?.name ?? 'Explora la placa'}</h4><p>{part?.description ?? 'Empieza por el puerto USB y descubre la función de cada parte.'}</p></div>
+    <p className="support-note">Partes exploradas: {explored.length}/5</p>
+  </>;
 
-  return <div className="shell">
+
+  return <div className="shell"><a className="skip-link" href="#contenido">Ir al contenido</a>
     <aside className={`sidebar ${showMobileMenu ? 'open' : ''}`} aria-label="Navegación principal">
       <div className="brand-icon" title="Arduino Lab ES"><CircuitBoard size={27} strokeWidth={1.8}/></div>
       <div className="sidebar-divider"/>
-      <nav aria-label="Secciones">
-        <button className="nav-icon selected" title="Lecciones" aria-label="Lecciones"><BookOpen size={22}/></button>
-        <button className="nav-icon" title="Laboratorio" aria-label="Laboratorio"><CircuitBoard size={22}/></button>
-        <button className="nav-icon" title="Código" aria-label="Código" onClick={() => document.getElementById('code-panel')?.scrollIntoView({behavior:'smooth'})}><Code2 size={22}/></button>
+      <nav id="navegacion" aria-label="Secciones">
+        <button className="nav-icon selected" title="Lecciones" aria-label="Lecciones" onClick={()=>document.getElementById('lecciones')?.scrollIntoView()}><BookOpen size={22}/></button>
+        <button className="nav-icon" title="Laboratorio" aria-label="Laboratorio" onClick={()=>document.getElementById('escena')?.scrollIntoView()}><CircuitBoard size={22}/></button>
+        <button className="nav-icon" title="Código" aria-label="Código" disabled={boardMode} onClick={() => document.getElementById('code-panel')?.scrollIntoView({behavior:'smooth'})}><Code2 size={22}/></button>
         <button className="nav-icon" title="Actividades" aria-label="Actividades" onClick={()=>setTab('challenge')}><GraduationCap size={23}/></button>
       </nav>
       <div className="sidebar-bottom"><button className="nav-icon" aria-label="Configuración visual" title="Mostrar u ocultar cables" onClick={()=>setShowWires(!showWires)}><Settings2 size={21}/></button></div>
     </aside>
 
-    <main className="main">
+    <main className="main" id="contenido">
       <header className="topbar">
-        <button className="mobile-menu" aria-label="Abrir o cerrar menú" onClick={()=>setShowMobileMenu(!showMobileMenu)}><Menu size={22}/></button>
+        <button className="mobile-menu" aria-label="Abrir o cerrar menú" aria-expanded={showMobileMenu} aria-controls="navegacion" onClick={()=>setShowMobileMenu(!showMobileMenu)}><Menu size={22}/></button>
         <div className="brand-heading"><div className="brand-kicker">APRENDE · EXPERIMENTA · CREA</div><h1>ARDUINO <span>LAB</span><small>ES</small></h1></div>
-        <div className="top-right"><div className="course-chip"><Zap size={15}/> Laboratorio virtual</div><div className="progress-card"><div className="progress-meta"><b>Tu progreso</b><strong>{progress}/11</strong></div><div className="progress-track"><div style={{width:`${progress / 11 * 100}%`}}/></div></div></div>
+        <div className="top-right"><div className="course-chip"><Zap size={15}/> Laboratorio virtual</div><div className="progress-card"><div className="progress-meta"><b>Tu progreso</b><strong>{progress}/11</strong></div><div className="progress-track" role="progressbar" aria-label="Lecciones completadas" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={11}><div style={{width:`${progress / 11 * 100}%`}}/></div></div></div>
       </header>
 
+      {storageError && <p role="status" className="storage-warning">El navegador no permite guardar tu avance. Puedes continuar en esta sesión.</p>}
       <div className="main-grid">
-        <section className="stage-wrap" aria-label="Escena interactiva tridimensional">
+        <section id="escena" className="stage-wrap" aria-label="Escena interactiva tridimensional">
           <div className="stage-heading"><span className="eyebrow">EXPERIMENTO {lesson.number.toString().padStart(2,'0')} / 11</span><h2>{lesson.title}</h2><p>{lesson.subtitle}</p></div>
-          <div className="stage-canvas"><ArduinoScene ledOn={ledOn} intensity={brightness} showWires={showWires}/></div>
+          <div className="stage-canvas"><Suspense fallback={<p className="scene-loading" role="status">Cargando la escena 3D…</p>}><ArduinoScene ledOn={ledOn} intensity={brightness} showWires={showWires} resistance={resistance} boardMode={boardMode} selectedPart={selectedPart} onSelectPart={selectPart}/></Suspense></div>
           <div className="floating-label component-label"><span className="spot"/> Arduino UNO <small>ATmega328P</small></div>
-          <div className="floating-label led-label"><Lightbulb size={17}/> LED <span className={`led-indicator ${ledOn ? 'on' : ''}`}/></div>
-          <div className="stage-instructions"><Info size={15}/> Arrastra para girar · Rueda para acercar · Clic derecho para desplazar</div>
-          <div className="stage-actions"><button className="action-light" onClick={()=>setShowWires(!showWires)}><CircuitBoard size={16}/>{showWires ? 'Ocultar cables' : 'Mostrar cables'}</button><span className="simulation-tag"><span className={running ? 'live-dot on' : 'live-dot'}/>{running ? 'Simulación activa' : 'En espera'}</span></div>
+          {!boardMode && <div className="floating-label led-label"><Lightbulb size={17}/> LED <span className={`led-indicator ${ledOn ? 'on' : ''}`}/></div>}
+          <div className="stage-instructions"><Info size={15}/> Arrastra para girar · Rueda o pellizco para acercar</div>
+          {!boardMode && <div className="stage-actions"><button className="action-light" onClick={()=>setShowWires(!showWires)}><CircuitBoard size={16}/>{showWires ? 'Ocultar cables' : 'Mostrar cables'}</button><span className="simulation-tag"><span className={running ? 'live-dot on' : 'live-dot'}/>{running ? 'Simulación activa' : 'En espera'}</span></div>}
         </section>
 
         <aside className="right-column">
           <section className="information card">
-            <div className="tabs" role="tablist" aria-label="Información de la lección">
-              <button role="tab" aria-selected={tab==='learn'} className={tab==='learn' ? 'active' : ''} onClick={()=>setTab('learn')}>Aprender</button>
-              <button role="tab" aria-selected={tab==='pins'} className={tab==='pins' ? 'active' : ''} onClick={()=>setTab('pins')}>Conexiones</button>
-              <button role="tab" aria-selected={tab==='challenge'} className={tab==='challenge' ? 'active' : ''} onClick={()=>setTab('challenge')}>Reto</button>
+            <div className="tabs" role="tablist" aria-label="Información de la lección" onKeyDown={event => {
+              const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+              const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+              const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+              if (next >= 0) { event.preventDefault(); tabs[next].focus(); tabs[next].click(); }
+            }}>
+              <button id="tab-learn" aria-controls="lesson-panel" tabIndex={tab==='learn' ? 0 : -1} role="tab" aria-selected={tab==='learn'} className={tab==='learn' ? 'active' : ''} onClick={()=>setTab('learn')}>Aprender</button>
+              <button id="tab-pins" aria-controls="lesson-panel" tabIndex={tab==='pins' ? 0 : -1} role="tab" aria-selected={tab==='pins'} className={tab==='pins' ? 'active' : ''} onClick={()=>setTab('pins')}>{boardMode ? 'Partes' : 'Conexiones'}</button>
+              <button id="tab-challenge" aria-controls="lesson-panel" tabIndex={tab==='challenge' ? 0 : -1} role="tab" aria-selected={tab==='challenge'} className={tab==='challenge' ? 'active' : ''} onClick={()=>setTab('challenge')}>Reto</button>
             </div>
-            <div className="information-inner">
+            <div className="information-inner" id="lesson-panel" role="tabpanel" tabIndex={0} aria-labelledby={`tab-${tab}`}>
               {tab==='learn' && <>
                 <div className="section-flag"><span className="dot"/> FUNDAMENTOS DE ELECTRÓNICA</div>
                 <h3>{boardMode ? 'Conoce tu Arduino UNO' : '¡Enciende tu primer LED!'}</h3>
                 <p className="lead">{boardMode ? 'La placa Arduino UNO permite controlar circuitos por medio de un programa. Explora su microcontrolador, sus pines digitales y su alimentación.' : 'Un LED es un diodo que emite luz cuando circula corriente en la dirección correcta. Con Arduino podemos encenderlo y apagarlo mediante instrucciones de programación.'}</p>
+                {boardMode ? boardPanel : <>
+                <p className="objective"><b>Objetivo:</b> observa HIGH/LOW, ajusta tiempos y resistencia y explica cómo se protege el LED.</p>
                 <div className="feature-list">
                   <div className="feature"><span className="feature-icon"><Zap size={20}/></span><div><b>Salida digital</b><p>El pin 13 alterna entre ALTO y BAJO.</p></div></div>
                   <div className="feature"><span className="feature-icon"><Activity size={20}/></span><div><b>Resistencia protectora</b><p>Limita la corriente eléctrica que recibe el LED.</p></div></div>
                   <div className="feature"><span className="feature-icon"><CircleHelp size={20}/></span><div><b>Experimenta</b><p>Cambia los tiempos y observa el circuito 3D.</p></div></div>
                 </div>
+                </>}
               </>}
-              {tab==='pins' && <>
+              {tab==='pins' && (boardMode ? boardPanel : <>
                 <div className="section-flag"><span className="dot"/> ESQUEMA DE CONEXIÓN</div><h3>Conecta correctamente</h3>
-                <div className="pin-table"><div><b>D13</b><span>Resistencia → ánodo (+) del LED</span></div><div><b>GND</b><span>Cátodo (−) del LED</span></div><div><b>220 Ω</b><span>Resistencia en serie</span></div></div>
+                <div className="pin-table"><div><b>D13</b><span>Resistencia → ánodo (+) del LED</span></div><div><b>GND</b><span>Cátodo (−) del LED</span></div><div><b>{resistance.toLocaleString('es-GT')} Ω</b><span>Resistencia en serie seleccionada</span></div></div>
                 <p className="support-note">La vista es ilustrativa. Verifica polaridad, conexiones y límites de corriente antes de montar un circuito real.</p>
-              </>}
+              </>)}
               {tab==='challenge' && <>
                 <div className="section-flag"><span className="dot"/> ACTIVIDAD DE APRENDIZAJE</div><h3>Comprueba lo aprendido</h3>
-                <p className="lead">¿Por qué utilizamos una resistencia en serie con el LED?</p>
+                <p className="lead">{challenge.question}</p>
                 <div className="answers">
-                  {['Para aumentar el voltaje del pin', 'Para limitar la corriente y proteger el LED', 'Para que Arduino funcione sin energía'].map((text, i) => <button className={`answer ${quizAnswer===i ? 'chosen' : ''}`} onClick={()=>setQuizAnswer(i)} key={i}>{String.fromCharCode(65+i)}. {text}</button>)}
+                  {challenge.answers.map((text, i) => <button aria-pressed={quizAnswer===i} className={`answer ${quizAnswer===i ? 'chosen' : ''}`} onClick={()=>setQuizAnswer(i)} key={i}>{String.fromCharCode(65+i)}. {text}</button>)}
                 </div>
-                {quizAnswer!==null && <p className={correct ? 'correct feedback' : 'incorrect feedback'}>{correct ? '¡Correcto! La resistencia limita la corriente.' : 'Revisa la explicación sobre la función de la resistencia.'}</p>}
-                <button className="complete-button" disabled={!correct || !hasRun || boardMode || completed.includes('blink')} onClick={finish}><CheckCircle2 size={17}/>{completed.includes('blink') ? 'Lección completada' : 'Completar lección'}</button>
-                {!hasRun && <p className="micro-note">Primero ejecuta al menos una simulación.</p>}
+                {quizAnswer!==null && <p role="status" className={correct ? 'correct feedback' : 'incorrect feedback'}>{correct ? `¡Correcto! ${challenge.explanation}` : 'Revisa la explicación e inténtalo de nuevo.'}</p>}
+                <button className="complete-button" disabled={!canCompleteLesson(activeId, quizAnswer, hasRun, explored) || completed.includes(activeId)} onClick={finish}><CheckCircle2 size={17}/>{completed.includes(activeId) ? 'Lección completada' : 'Completar lección'}</button>
+                {boardMode && explored.length < 5 && <p className="micro-note">Explora las cinco partes antes de completar la lección ({explored.length}/5).</p>}
+                {!boardMode && !hasRun && <p className="micro-note">Primero ejecuta al menos una simulación.</p>}
               </>}
             </div>
           </section>
 
-          <section className="controls card" aria-label="Controles de simulación">
+          {!boardMode && <><section className="controls card" aria-label="Controles de simulación">
             <div className="card-header"><div><SlidersHorizontal size={17}/><b>Prueba tú mismo</b></div><span className="small-flag">SIMULACIÓN GUIADA</span></div>
             <div className="controls-body">
               <label className="control-label">Tiempo encendido <b>{onMs} ms</b><input type="range" min="100" max="2000" step="100" value={onMs} onChange={e=>setOnMs(Number(e.target.value))} disabled={boardMode}/></label>
@@ -142,22 +176,23 @@ export default function App() {
             </div>
           </section>
 
-          <section className="code-card card" id="code-panel"><div className="card-header"><div><Code2 size={18}/><b>Tu código Arduino</b></div><div className="code-btns"><button title="Restablecer valores" aria-label="Restablecer valores" onClick={()=>{stop();setOnMs(500);setOffMs(500);setResistance(220)}}><RotateCcw size={16}/></button><button className={`run-button ${running ? 'playing':''}`} onClick={run} disabled={boardMode} aria-label={running ? 'Detener simulación' : 'Ejecutar simulación'}>{running ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button></div></div>
+          <section className="code-card card" id="code-panel"><div className="card-header"><div><Code2 size={18}/><b>Tu código Arduino</b></div><div className="code-btns"><button title="Restablecer valores" aria-label="Restablecer valores" onClick={()=>{simulation.reset();setLogs([]);setOnMs(500);setOffMs(500);setResistance(220)}}><RotateCcw size={16}/></button><button className={`run-button ${running ? 'playing':''}`} onClick={run} disabled={boardMode} aria-label={running ? 'Detener simulación' : 'Ejecutar simulación'}>{running ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button></div></div>
             <pre className="code-view"><code>{code}</code></pre>
             <div className="code-footer"><span>Arduino C++ · Ejemplo parametrizado</span><span>Ejecutar <ArrowRight size={13}/></span></div>
           </section>
+          </>}
         </aside>
       </div>
 
-      <div className="bottom-section">
+      <div className="bottom-section" id="lecciones">
         <div className="lessons-heading"><div><BookOpen size={19}/><h2>Ruta de aprendizaje</h2><span>11 lecciones progresivas</span></div><span className="micro-note">Selecciona una lección para explorar</span></div>
         <div className="lesson-scroll" aria-label="Lecciones disponibles">
           {lessons.map((item) => <button key={item.id} onClick={()=>changeLesson(item.id)} className={`lesson-card ${item.id===activeId ? 'active' : ''} ${item.status==='upcoming' ? 'upcoming':''}`} disabled={item.status==='upcoming'} aria-label={`${item.number}. ${item.title}${item.status==='upcoming'?' (próximamente)':''}`}>
             <span className="lesson-index">{String(item.number).padStart(2,'0')}</span><span className="lesson-text"><b>{item.title}</b><small>{item.subtitle}</small></span>{completed.includes(item.id) ? <CheckCircle2 size={17}/> : <ChevronRight size={17}/>}</button>)}
         </div>
-        <div className="bottom-bar"><div className="serial"><Volume2 size={15}/><b>Monitor de eventos</b><span>9600 baudios (demostración)</span></div><div className="logs">{logs.length ? logs.slice(-3).map(l=><span key={l.id}>{l.text}</span>) : <span className="placeholder">Ejecuta el ejemplo para ver eventos simulados.</span>}</div></div>
+        <div className="bottom-bar"><div className="serial"><Volume2 size={15}/><b>Monitor de eventos</b><span>Eventos de simulación guiada</span></div><div className="logs">{logs.length ? logs.slice(-3).map(l=><span key={l.id}>{l.text}</span>) : <span className="placeholder">{boardMode ? 'Explora las partes de la placa con los puntos o los botones.' : 'Ejecuta el ejemplo para ver eventos simulados.'}</span>}</div></div>
       </div>
-      <footer><span>Arduino Lab ES · Prototipo educativo independiente</span><span>Los resultados visuales son simulados, no representan un circuito físico real.</span></footer>
+      <footer><span>Arduino Lab ES · Prototipo educativo independiente</span><span>Simulación guiada: no compila C++, no emula Arduino ni controla hardware.</span></footer>
     </main>
   </div>;
 }
