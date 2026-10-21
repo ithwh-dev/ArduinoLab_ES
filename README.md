@@ -31,11 +31,17 @@ npm run build
 
 ## Uso de las lecciones
 
-En «Conoce Arduino», selecciona los puntos numerados de la placa o los botones del panel (Tab y Enter/Espacio). Explora USB, microcontrolador, entradas analógicas, pines digitales y alimentación. Responde el reto correctamente para completar la lección después de explorar las cinco partes.
+En «Conoce Arduino», selecciona los componentes o sus rótulos en la placa o los botones del panel (Tab y Enter/Espacio). Explora USB, microcontrolador, entradas analógicas, pines digitales y alimentación. Responde el reto correctamente para completar la lección después de explorar las cinco partes.
 
 En «Enciende un LED», ejecuta la simulación guiada y observa los eventos HIGH/LOW. Ajusta los tiempos de 100 a 2000 ms y la resistencia entre 220 Ω, 1 kΩ y 10 kΩ. El ejemplo C++ refleja los tiempos; no se ejecuta ni se compila. Responde el reto después de realizar la actividad para completar la lección. Restablecer detiene el temporizador y devuelve los controles a 500/500 ms y 220 Ω; conserva las lecciones completadas.
 
 Las pestañas admiten flechas izquierda/derecha, Inicio y Fin. Hay foco visible, etiquetas de controles, alternativa a la selección 3D con teclado y aviso ante almacenamiento bloqueado. La escena usa DPR limitado y renderizado bajo demanda, con encuadre adaptado a pantallas estrechas. Las fuentes usan alternativas locales para evitar solicitudes externas.
+
+## Inspección visual de componentes
+
+La placa usa geometría propia para los conectores, zócalos, pines, microcontrolador, condensadores y oscilador, con serigrafía procedural original. No descarga modelos ni texturas de la referencia.
+
+Pasa el cursor sobre el microcontrolador, USB, pines digitales, entradas analógicas o alimentación para resaltar la zona y leer su función. También puedes enfocar su rótulo con Tab; Escape cierra la explicación. En pantallas táctiles, selecciona la parte para leerla en el panel. El LED y la resistencia tienen información adicional por cursor, foco o toque. Inspeccionar con hover no suma progreso: debes seleccionar explícitamente las partes para completar la actividad.
 
 ## Pruebas de navegador
 

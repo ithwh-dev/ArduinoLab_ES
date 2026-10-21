@@ -15,3 +15,9 @@
 @media(max-width:680px){.right-column{align-items:stretch}}
 
 @media(max-width:680px){.sidebar{visibility:hidden}.sidebar.open{visibility:visible}}
+/* Identificación de componentes: el mismo contenido con ratón, teclado o toque. */
+.scene-marker{width:auto;height:auto;min-height:32px;max-width:156px;border:1px solid #c8b697;border-radius:6px;padding:6px 10px;background:#fff9ecf2;color:#20334e;font:700 11px system-ui;box-shadow:0 3px 9px #28314918;white-space:nowrap}.scene-marker:hover,.scene-marker:focus-visible,.scene-marker[aria-pressed=true]{background:#e2f7ef;border-color:#129a90;color:#095c5b}.projected-label:has(.component-tooltip){z-index:20}.component-tooltip{position:absolute;top:calc(100% + 9px);left:50%;transform:translateX(-50%);width:240px;padding:13px 15px;background:#fffaf0;border:1px solid #bba78a;border-radius:9px;box-shadow:0 8px 28px #21334b25;color:#263850;font:13px/1.5 system-ui;pointer-events:none}.component-tooltip b{display:block;color:#0b716d}.component-tooltip p{margin:6px 0 0}.stage-canvas{background:#f7efdf}.component-label,.led-label{display:none}
+@media(max-width:680px){.scene-marker{font-size:9px;padding:5px 6px;max-width:104px;white-space:normal;min-height:32px}.component-tooltip{width:190px;font-size:12px}.scene-overlays{overflow:visible}}
+.component-tooltip{left:calc(50% + var(--tooltip-x,0px))}
+
+.component-tooltip{top:auto;bottom:calc(100% + 10px)}
